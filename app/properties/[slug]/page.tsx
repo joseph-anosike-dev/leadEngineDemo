@@ -132,7 +132,6 @@ function buildJsonLd(property: Property) {
 }
 
 export default async function PropertyPage({ params }: PageProps) {
-await new Promise((resolve) => setTimeout(resolve, 3000));
 
   const { slug } = await params;
   const property = await getProperty(slug);
