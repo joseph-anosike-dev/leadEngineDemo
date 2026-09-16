@@ -60,7 +60,9 @@ export async function submitLead({
     .select()
     .single();
 
+  
   if (error || !lead) {
+    console.error("LEAD SUBMIT FAILED:", error);
     return {
       success: false,
       error:
