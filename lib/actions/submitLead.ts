@@ -2,7 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { leadQualificationSchema, type LeadQualificationInput } from "@/lib/schemas";
-import type { Lead } from "@/types/database";
+import { randomUUID } from "crypto";
 
 export interface SubmitLeadParams {
   propertyId: string;
@@ -16,7 +16,7 @@ export interface SubmitLeadParams {
 }
 
 export type SubmitLeadResult =
-  | { success: true; lead: Lead }
+  | { success: true; leadId: string }
   | { success: false; error: string };
 
 /**
@@ -26,6 +26,8 @@ export type SubmitLeadResult =
  * actually authorizes this write, not any elevated privilege here.
  */
 export async function submitLead({
+
+
   propertyId,
   data,
   attribution,
@@ -40,10 +42,12 @@ export async function submitLead({
   }
 
   const supabase = await createClient();
+  const leadId = randomUUID();
 
-  const { data: lead, error } = await supabase
+  const { error } = await supabase
     .from("leads")
     .insert({
+      id: leadId,
       property_id: propertyId,
       purpose: parsed.data.purpose,
       timeline: parsed.data.timeline,
@@ -57,10 +61,9 @@ export async function submitLead({
       utm_medium: attribution?.utmMedium ?? null,
       utm_campaign: attribution?.utmCampaign ?? null,
     })
-    .select()
-    .single();
 
-  if (error || !lead) {
+  if (error) {
+    console.error("LEAD SUBMIT FAILED:", error);
     return {
       success: false,
       error:
@@ -68,5 +71,5 @@ export async function submitLead({
     };
   }
 
-  return { success: true, lead };
+  return { success: true, leadId };
 }
