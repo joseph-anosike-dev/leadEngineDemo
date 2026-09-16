@@ -6,13 +6,6 @@ import { PropertyMediaGallery } from "@/components/PropertyMediaGallery";
 import { PropertyInquiryLauncher } from "@/components/PropertyInquiryLauncher";
 import type { Property, TitleDocumentType } from "@/types/database";
 
-// Caches each property page for 60 seconds. Listings don't change
-// second-to-second, so repeat visits within that window are served
-// instantly instead of round-tripping to Supabase again — cuts real
-// latency on every click after the first, on top of picking a Vercel
-// function region close to the Supabase database (see README).
-export const revalidate = 60;
-
 interface PageProps {
   params: Promise<{ slug: string }>;
 }
@@ -43,7 +36,10 @@ async function getProperty(slug: string): Promise<Property | null> {
     .eq("published", true)
     .single();
 
-  if (error || !data) return null;
+  if (error || !data) {
+    console.error("PROPERTY QUERY FAILED:", error);
+    return null;
+  }
   return data;
 }
 
@@ -136,6 +132,7 @@ function buildJsonLd(property: Property) {
 }
 
 export default async function PropertyPage({ params }: PageProps) {
+
   const { slug } = await params;
   const property = await getProperty(slug);
 
@@ -161,7 +158,7 @@ export default async function PropertyPage({ params }: PageProps) {
 
         <div className="mt-6 flex items-start justify-between gap-4">
           <div>
-            <h1 className="font-display text-2xl text-[#1A1A1A]">
+            <h1 className="text-2xl font-semibold text-[#1A1A1A]">
               {property.title}
             </h1>
             <p className="mt-1 text-sm text-[#1A1A1A]/60">
@@ -170,7 +167,7 @@ export default async function PropertyPage({ params }: PageProps) {
             </p>
           </div>
           <span
-            className={`whitespace-nowrap px-3 py-1 text-xs font-medium ${
+            className={`whitespace-nowrap rounded-full px-3 py-1 text-xs font-medium ${
               property.status === "available"
                 ? "bg-[#7A1F1F]/10 text-[#7A1F1F]"
                 : "bg-[#1A1A1A]/10 text-[#1A1A1A]/60"
@@ -180,7 +177,7 @@ export default async function PropertyPage({ params }: PageProps) {
           </span>
         </div>
 
-        <p className="mt-4 font-display text-2xl text-[#7A1F1F]">
+        <p className="mt-4 text-2xl font-semibold text-[#7A1F1F]">
           {formatNaira(property.price_naira)}
         </p>
 
@@ -222,29 +219,12 @@ export default async function PropertyPage({ params }: PageProps) {
         )}
 
         {property.micro_location_note && (
-          <p className="mt-4 border border-[#1A1A1A]/10 bg-[#1A1A1A]/5 p-4 text-sm text-[#1A1A1A]/70">
-            {property.micro_location_note}
+          <p className="mt-4 rounded-lg bg-[#1A1A1A]/5 p-4 text-sm text-[#1A1A1A]/70">
+            📍 {property.micro_location_note}
           </p>
         )}
 
-        <div className="mt-8 flex items-center gap-3 border-t border-[#1A1A1A]/10 pt-6">
-          <div className="flex h-11 w-11 items-center justify-center rounded-full bg-[#1A1A1A] font-display text-sm text-[#FAF9F6]">
-            {property.agent_name
-              .split(" ")
-              .map((part) => part[0])
-              .slice(0, 2)
-              .join("")
-              .toUpperCase()}
-          </div>
-          <div>
-            <p className="text-sm font-medium text-[#1A1A1A]">
-              {property.agent_name}
-            </p>
-            <p className="text-xs text-[#1A1A1A]/50">Listing agent</p>
-          </div>
-        </div>
-
-        <div className="mt-4">
+        <div className="mt-8">
           <PropertyInquiryLauncher
             property={{
               id: property.id,

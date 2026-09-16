@@ -31,7 +31,7 @@ export function PropertyCard({ property }: PropertyCardProps) {
   return (
     <Link
       href={`/properties/${property.slug}`}
-      className="group block border border-[#1A1A1A]/10 bg-white transition-colors hover:border-[#B8963E]"
+      className="group block overflow-hidden rounded-xl border border-[#1A1A1A]/10 bg-white transition-shadow hover:shadow-md"
     >
       <div className="relative aspect-[4/3] w-full bg-[#1A1A1A]/5">
         {coverImage ? (
@@ -39,7 +39,7 @@ export function PropertyCard({ property }: PropertyCardProps) {
             src={coverImage.url}
             alt={coverImage.alt || property.title}
             fill
-            className="object-cover"
+            className="object-cover transition-transform group-hover:scale-[1.02]"
             sizes="(max-width: 768px) 100vw, 33vw"
           />
         ) : (
@@ -48,7 +48,7 @@ export function PropertyCard({ property }: PropertyCardProps) {
           </div>
         )}
         <span
-          className={`absolute left-3 top-3 px-2.5 py-1 text-xs font-medium ${
+          className={`absolute left-3 top-3 rounded-full px-2.5 py-1 text-xs font-medium ${
             property.status === "available"
               ? "bg-[#7A1F1F] text-white"
               : "bg-[#1A1A1A]/80 text-white"
@@ -58,8 +58,8 @@ export function PropertyCard({ property }: PropertyCardProps) {
         </span>
       </div>
 
-      <div className="border-t border-[#1A1A1A]/10 p-4">
-        <p className="font-display text-xl text-[#7A1F1F]">
+      <div className="p-4">
+        <p className="text-lg font-semibold text-[#7A1F1F]">
           {formatNaira(property.price_naira)}
         </p>
         <h3 className="mt-1 truncate text-sm font-medium text-[#1A1A1A]">

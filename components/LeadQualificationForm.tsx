@@ -264,7 +264,7 @@ export function LeadQualificationForm({
         <div className="mb-5 flex items-center justify-between">
           <h2
             id="lead-form-heading"
-            className="text-lg font-display text-[#1A1A1A]"
+            className="text-lg font-semibold text-[#1A1A1A]"
           >
             Inquire about this property
           </h2>
