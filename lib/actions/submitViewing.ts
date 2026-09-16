@@ -1,11 +1,11 @@
 "use server";
 
+import { randomUUID } from "crypto";
 import { createClient } from "@/lib/supabase/server";
 import { viewingRequestSchema, type ViewingRequestInput } from "@/lib/schemas";
-import type { Viewing } from "@/types/database";
 
 export type SubmitViewingResult =
-  | { success: true; viewing: Viewing }
+  | { success: true; viewingId: string }
   | { success: false; error: string };
 
 /**
@@ -14,6 +14,12 @@ export type SubmitViewingResult =
  * (RLS's "Public can request a viewing" insert policy is what actually
  * authorizes this, including its check that leadId/propertyId already
  * correspond to a real lead row).
+ *
+ * Generates the row's id itself and never reads the row back, for the same
+ * reason as submitLead.ts: chaining `.select().single()` after an insert
+ * is an implicit SELECT under RLS, and there's intentionally no SELECT
+ * policy on `viewings` for the public — that read-back would get blocked
+ * and roll back the whole insert.
  *
  * Deliberately does NOT throw on failure — a viewing request is an
  * additive, optional step tacked onto the end of the qualification form.
@@ -33,26 +39,25 @@ export async function submitViewing(
   }
 
   const supabase = await createClient();
+  const viewingId = randomUUID();
 
-  const { data: viewing, error } = await supabase
-    .from("viewings")
-    .insert({
-      lead_id: parsed.data.leadId,
-      property_id: parsed.data.propertyId,
-      mode: parsed.data.mode,
-      preferred_date: parsed.data.preferredDate,
-      preferred_time: parsed.data.preferredTime,
-      notes: parsed.data.notes || null,
-    })
-    .select()
-    .single();
+  const { error } = await supabase.from("viewings").insert({
+    id: viewingId,
+    lead_id: parsed.data.leadId,
+    property_id: parsed.data.propertyId,
+    mode: parsed.data.mode,
+    preferred_date: parsed.data.preferredDate,
+    preferred_time: parsed.data.preferredTime,
+    notes: parsed.data.notes || null,
+  });
 
-  if (error || !viewing) {
+  if (error) {
+    console.error("VIEWING SUBMIT FAILED:", error);
     return {
       success: false,
       error: "We couldn't save your viewing request just now.",
     };
   }
 
-  return { success: true, viewing };
+  return { success: true, viewingId };
 }
