@@ -13,6 +13,7 @@ import {
 } from "@/lib/schemas";
 import { generateWhatsAppLink } from "@/lib/generateWhatsAppLink";
 import { submitLead } from "@/lib/actions/submitLead";
+import { submitViewing } from "@/lib/actions/submitViewing";
 import { trackEvent, trackEventBeforeRedirect } from "@/lib/analytics";
 import type { Property } from "@/types/database";
 
@@ -24,7 +25,13 @@ import type { Property } from "@/types/database";
 //   trim:   #B8963E (gold)           — active-step indicator, focus ring
 // ----------------------------------------------------------------------------
 
-type StepId = "purpose" | "timeline" | "budget" | "payment" | "contact";
+type StepId =
+  | "purpose"
+  | "timeline"
+  | "budget"
+  | "payment"
+  | "contact"
+  | "viewing";
 
 const STEPS: { id: StepId; label: string }[] = [
   { id: "purpose", label: "Intent" },
@@ -32,6 +39,7 @@ const STEPS: { id: StepId; label: string }[] = [
   { id: "budget", label: "Budget" },
   { id: "payment", label: "Payment" },
   { id: "contact", label: "Contact" },
+  { id: "viewing", label: "Viewing" },
 ];
 
 interface StepState {
@@ -83,6 +91,25 @@ export function LeadQualificationForm({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [hasTrackedStart, setHasTrackedStart] = useState(false);
 
+  // Populated once the contact step successfully saves the lead (CORE
+  // 05/06). Needed at the final "viewing" step to build the WhatsApp link
+  // and to attach the viewing request (CORE 07) to the right lead row.
+  const [leadId, setLeadId] = useState<string | null>(null);
+  const [leadData, setLeadData] = useState<LeadQualificationInput | null>(
+    null
+  );
+
+  // Viewing step (CORE 07) — plain useState rather than react-hook-form
+  // since it's a genuinely separate schema (viewingRequestSchema) tacked
+  // onto the end of the qualification flow, not part of the lead itself.
+  const [viewingDate, setViewingDate] = useState("");
+  const [viewingTime, setViewingTime] = useState("");
+  const [viewingMode, setViewingMode] = useState<"physical" | "virtual">(
+    "physical"
+  );
+  const [viewingError, setViewingError] = useState<string | null>(null);
+  const [isRedirecting, setIsRedirecting] = useState(false);
+
   const {
     register,
     trigger,
@@ -97,7 +124,6 @@ export function LeadQualificationForm({
   });
 
   const currentStep = STEPS[stepState.currentIndex];
-  const isLastStep = stepState.currentIndex === STEPS.length - 1;
 
   function markStarted() {
     if (!hasTrackedStart) {
@@ -109,9 +135,16 @@ export function LeadQualificationForm({
   async function goNext() {
     markStarted();
 
+    // The viewing step has its own dedicated buttons (Skip / Request), not
+    // this generic "Continue" handler.
+    if (currentStep.id === "viewing") return;
+
     // Validate only the current step's field(s) before advancing, so a
     // prospect isn't shown five steps of errors at once.
-    const fieldsForStep: Record<StepId, (keyof LeadQualificationInput)[]> = {
+    const fieldsForStep: Record<
+      Exclude<StepId, "viewing">,
+      (keyof LeadQualificationInput)[]
+    > = {
       purpose: ["purpose"],
       timeline: ["timeline"],
       budget: ["budgetRange"],
@@ -122,14 +155,17 @@ export function LeadQualificationForm({
     const isStepValid = await trigger(fieldsForStep[currentStep.id]);
     if (!isStepValid) return;
 
-    if (isLastStep) {
-      handleSubmit(onFinalSubmit)();
+    if (currentStep.id === "contact") {
+      // The contact step is where the lead actually gets saved — moving
+      // past it means the qualification data is committed, not just that
+      // the form fields are locally valid.
+      handleSubmit(onContactStepSubmit)();
     } else {
       dispatch({ type: "next" });
     }
   }
 
-  async function onFinalSubmit(data: LeadQualificationInput) {
+  async function onContactStepSubmit(data: LeadQualificationInput) {
     setSubmitPhase("submitting");
     setErrorMessage(null);
 
@@ -145,6 +181,10 @@ export function LeadQualificationForm({
       return;
     }
 
+    setLeadId(result.leadId);
+    setLeadData(data);
+    setSubmitPhase("idle");
+
     trackEvent("qualification_form_completed", {
       propertyId: property.id,
       propertyTitle: property.title,
@@ -152,7 +192,14 @@ export function LeadQualificationForm({
       ...attribution,
     });
 
-    const { url } = generateWhatsAppLink({ property, lead: data });
+    dispatch({ type: "next" });
+  }
+
+  async function proceedToWhatsApp() {
+    if (!leadData) return;
+    setIsRedirecting(true);
+
+    const { url } = generateWhatsAppLink({ property, lead: leadData });
 
     // Fire-and-await a short grace window so the analytics call has a
     // chance to actually leave the page before the redirect fires — mobile
@@ -164,6 +211,46 @@ export function LeadQualificationForm({
     });
 
     window.location.href = url;
+  }
+
+  async function handleSkipViewing() {
+    await proceedToWhatsApp();
+  }
+
+  async function handleRequestViewing() {
+    setViewingError(null);
+
+    if (!viewingDate || !viewingTime) {
+      setViewingError(
+        "Pick a date and time to request a viewing, or skip this step."
+      );
+      return;
+    }
+
+    if (!leadId) {
+      // Shouldn't happen (viewing step is unreachable without a saved
+      // lead), but fail safe rather than block the WhatsApp handoff.
+      await proceedToWhatsApp();
+      return;
+    }
+
+    const result = await submitViewing({
+      leadId,
+      propertyId: property.id,
+      mode: viewingMode,
+      preferredDate: viewingDate,
+      preferredTime: viewingTime,
+    });
+
+    if (!result.success) {
+      // Non-blocking: a failed viewing request shouldn't trap the prospect
+      // — the agent still gets their contact details via WhatsApp either
+      // way, so continue rather than dead-end here.
+      setViewingError(`${result.error} You can still continue — the agent will have your contact details.`);
+      return;
+    }
+
+    await proceedToWhatsApp();
   }
 
   return (
@@ -390,35 +477,136 @@ export function LeadQualificationForm({
             </div>
           )}
 
+          {currentStep.id === "viewing" && (
+            <div className="space-y-4">
+              <div>
+                <p className="text-sm font-medium text-[#1A1A1A]">
+                  Want to schedule a viewing?
+                </p>
+                <p className="mt-1 text-xs text-[#1A1A1A]/60">
+                  Optional — you can also skip this and just message the
+                  agent directly.
+                </p>
+              </div>
+
+              <fieldset>
+                <legend className="mb-2 text-xs font-medium text-[#1A1A1A]/70">
+                  Viewing type
+                </legend>
+                <div className="flex gap-2">
+                  {(["physical", "virtual"] as const).map((mode) => (
+                    <label
+                      key={mode}
+                      className="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg border border-[#1A1A1A]/10 px-3 py-2 has-[:checked]:border-[#7A1F1F] has-[:checked]:bg-[#7A1F1F]/5"
+                    >
+                      <input
+                        type="radio"
+                        name="viewingMode"
+                        value={mode}
+                        checked={viewingMode === mode}
+                        onChange={() => setViewingMode(mode)}
+                        className="accent-[#7A1F1F]"
+                      />
+                      <span className="text-sm capitalize text-[#1A1A1A]">
+                        {mode}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label
+                    htmlFor="viewingDate"
+                    className="mb-1 block text-xs font-medium text-[#1A1A1A]/70"
+                  >
+                    Preferred date
+                  </label>
+                  <input
+                    id="viewingDate"
+                    type="date"
+                    value={viewingDate}
+                    min={new Date().toISOString().split("T")[0]}
+                    onChange={(e) => setViewingDate(e.target.value)}
+                    className="w-full rounded-lg border border-[#1A1A1A]/15 px-3 py-2 text-sm outline-none focus:border-[#B8963E] focus:ring-1 focus:ring-[#B8963E]"
+                  />
+                </div>
+                <div>
+                  <label
+                    htmlFor="viewingTime"
+                    className="mb-1 block text-xs font-medium text-[#1A1A1A]/70"
+                  >
+                    Preferred time
+                  </label>
+                  <input
+                    id="viewingTime"
+                    type="time"
+                    value={viewingTime}
+                    onChange={(e) => setViewingTime(e.target.value)}
+                    className="w-full rounded-lg border border-[#1A1A1A]/15 px-3 py-2 text-sm outline-none focus:border-[#B8963E] focus:ring-1 focus:ring-[#B8963E]"
+                  />
+                </div>
+              </div>
+
+              {viewingError && (
+                <p className="rounded-lg bg-[#7A1F1F]/5 px-4 py-2 text-sm text-[#7A1F1F]">
+                  {viewingError}
+                </p>
+              )}
+            </div>
+          )}
+
           {submitPhase === "error" && errorMessage && (
             <p className="mt-4 rounded-lg bg-[#7A1F1F]/5 px-4 py-2 text-sm text-[#7A1F1F]">
               {errorMessage}
             </p>
           )}
 
-          <div className="mt-6 flex gap-3">
-            {stepState.currentIndex > 0 && (
+          {currentStep.id !== "viewing" ? (
+            <div className="mt-6 flex gap-3">
+              {stepState.currentIndex > 0 && (
+                <button
+                  type="button"
+                  onClick={() => dispatch({ type: "back" })}
+                  className="flex-1 rounded-lg border border-[#1A1A1A]/15 px-4 py-3 text-sm font-medium text-[#1A1A1A]"
+                >
+                  Back
+                </button>
+              )}
               <button
                 type="button"
-                onClick={() => dispatch({ type: "back" })}
-                className="flex-1 rounded-lg border border-[#1A1A1A]/15 px-4 py-3 text-sm font-medium text-[#1A1A1A]"
+                onClick={goNext}
+                disabled={submitPhase === "submitting"}
+                className="flex-[2] rounded-lg bg-[#7A1F1F] px-4 py-3 text-sm font-medium text-white disabled:opacity-60"
               >
-                Back
+                {submitPhase === "submitting" ? "Saving..." : "Continue"}
               </button>
-            )}
-            <button
-              type="button"
-              onClick={goNext}
-              disabled={submitPhase === "submitting"}
-              className="flex-[2] rounded-lg bg-[#7A1F1F] px-4 py-3 text-sm font-medium text-white disabled:opacity-60"
-            >
-              {submitPhase === "submitting"
-                ? "Sending..."
-                : isLastStep
-                  ? "Send to agent on WhatsApp"
-                  : "Continue"}
-            </button>
-          </div>
+            </div>
+          ) : (
+            <div className="mt-6 space-y-3">
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={handleSkipViewing}
+                  disabled={isRedirecting}
+                  className="flex-1 rounded-lg border border-[#1A1A1A]/15 px-4 py-3 text-sm font-medium text-[#1A1A1A] disabled:opacity-60"
+                >
+                  Skip
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRequestViewing}
+                  disabled={isRedirecting}
+                  className="flex-[2] rounded-lg bg-[#7A1F1F] px-4 py-3 text-sm font-medium text-white disabled:opacity-60"
+                >
+                  {isRedirecting
+                    ? "Redirecting..."
+                    : "Request viewing & continue"}
+                </button>
+              </div>
+            </div>
+          )}
         </form>
       </div>
     </div>
