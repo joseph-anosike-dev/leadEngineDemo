@@ -1,4 +1,3 @@
-```tsx
 export default function Loading() {
   return (
     <div className="min-h-screen bg-[#FAF9F6]">
@@ -28,4 +27,4 @@ export default function Loading() {
     </div>
   );
 }
-```
+
