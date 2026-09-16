@@ -23,7 +23,7 @@ export function PropertySearchForm({
     <form
       method="get"
       action="/"
-      className="grid grid-cols-2 gap-3 rounded-xl bg-white p-4 shadow-sm sm:grid-cols-4"
+      className="grid grid-cols-2 gap-3 border border-[#1A1A1A]/10 bg-white p-4 sm:grid-cols-4"
     >
       <div className="col-span-2 sm:col-span-1">
         <label
