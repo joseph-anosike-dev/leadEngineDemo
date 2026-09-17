@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { formatNaira } from "@/lib/formatNaira";
@@ -241,14 +240,8 @@ export default async function PropertyPage({ params }: PageProps) {
             <p className="text-sm font-medium text-[#1A1A1A]">
               {property.agent_name}
             </p>
-          <p className="text-xs text-[#1A1A1A]/50">Listing agent</p>
+            <p className="text-xs text-[#1A1A1A]/50">Listing agent</p>
           </div>
-          <Link
-            href="/verified"
-            className="ml-auto whitespace-nowrap border border-[#B8963E] px-3 py-1.5 text-xs font-medium text-[#7A1F1F]"
-          >
-            View credentials
-          </Link>
         </div>
 
         <div className="mt-4">

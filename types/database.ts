@@ -101,6 +101,28 @@ export type Lead = {
   updated_at: string;
 }
 
+export type BusinessType = "individual" | "agency";
+
+export type Credential = {
+  label: string;
+  reference_number: string;
+  document_url: string;
+};
+
+// One row only — this app is one business per deployment (renamed and
+// customized per client), not a multi-agent marketplace, so nothing here
+// is ever looked up by id from elsewhere.
+export type BusinessProfile = {
+  id: string;
+  business_name: string;
+  business_type: BusinessType;
+  photo_url: string | null;
+  office_address: string | null;
+  creds: Credential[];
+  created_at: string;
+  updated_at: string;
+}
+
 export type Viewing = {
   id: string;
   lead_id: string;
@@ -170,6 +192,13 @@ export type Database = {
         Insert: Omit<Viewing, "id" | "created_at" | "updated_at" | "status"> &
           Partial<Pick<Viewing, "id" | "created_at" | "updated_at" | "status">>;
         Update: Partial<Viewing>;
+        Relationships: [];
+      };
+      business_profile: {
+        Row: BusinessProfile;
+        Insert: Omit<BusinessProfile, "id" | "created_at" | "updated_at"> &
+          Partial<Pick<BusinessProfile, "id" | "created_at" | "updated_at">>;
+        Update: Partial<BusinessProfile>;
         Relationships: [];
       };
     };
